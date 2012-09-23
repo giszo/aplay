@@ -1,6 +1,7 @@
 #include "huffman.h"
 
 #include <cassert>
+#include <cstddef>
 
 // The following tables are used for huffman decoding.
 // Script called huffman.py is used to generate them.
