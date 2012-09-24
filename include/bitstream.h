@@ -12,6 +12,8 @@ class BitStream
 
 	unsigned GetData(unsigned bitLength);
 
+	void Rewind(unsigned amount);
+
     private:
 	/// The actual data to read from
 	const std::vector<unsigned char>& m_data;

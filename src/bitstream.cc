@@ -67,3 +67,23 @@ unsigned BitStream::GetData(unsigned bitLength)
 
     return data;
 }
+
+void BitStream::Rewind(unsigned amount)
+{
+    if (m_bitPos > 0)
+    {
+	unsigned i = std::min(amount, m_bitPos);
+
+	m_bitPos -= i;
+	amount -= i;
+    }
+
+    while (amount >= 8)
+    {
+	m_bytePos--;
+	amount -= 8;
+    }
+
+    if (amount > 0)
+	m_bitPos = 8 - amount;
+}

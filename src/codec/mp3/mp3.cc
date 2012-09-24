@@ -234,8 +234,6 @@ void Mp3Codec::ParseMainData(const std::vector<unsigned char>& data)
 	    unsigned part2Length = bs.GetPosition() - part2Start;
 	    // Make sure part2 is not bigger that was written in the side information for part2+3
 	    assert(granule->m_par2_3Length >= part2Length);
-	    // Calculate the length of part3 (huffman data)
-	    unsigned part3Length = granule->m_par2_3Length - part2Length;
 //	    std::cout << "gr=" << grIndex << " ch=" << channel << " part2len=" << part2Length << " part3len=" << part3Length << std::endl;
 
 	    // Parse the main (huffman coded) data
@@ -268,29 +266,50 @@ void Mp3Codec::ParseMainData(const std::vector<unsigned char>& data)
 		region2Start = scaleFactorBandIndex[0 /* TODO: 44.1kHz for now */][granule->m_region0Count + 1 + granule->m_region1Count + 1];
 	    }
 
-	    std::cout << "bigvalues*2=" << (granule->m_bigValues * 2) << std::endl;
-	    std::cout << "reg1start=" << region1Start << ", reg2start=" << region2Start << std::endl;
+//	    std::cout << "bigvalues*2=" << (granule->m_bigValues * 2) << std::endl;
+//	    std::cout << "reg1start=" << region1Start << ", reg2start=" << region2Start << std::endl;
 
-	    unsigned part3Start = bs.GetPosition();
+	    m_samples.clear();
 
 	    // Parse big values section
 	    for (unsigned i = 0; i < granule->m_bigValues * 2; i += 2)
 	    {
 		unsigned htIndex = granule->m_tableSelect[GetBigValuesRegionIndex(i, region1Start, region2Start)];
-		std::cout << "  htIndex=" << htIndex << std::endl;
-
-		unsigned x;
-		unsigned y;
-		HuffmanDecoder::Decode(bs, htIndex, x, y);
-		std::cout << "  x=" << x << ", y=" << y << std::endl;
+		HuffmanDecoder::DecodeBigValueData(bs, htIndex, m_samples);
 	    }
 
-	    unsigned part3End = bs.GetPosition();
+	    // Parse count1 area
+	    while ((bs.GetPosition() < (part2Start + granule->m_par2_3Length)) && (m_samples.size() < 576))
+		HuffmanDecoder::DecodeCount1Data(bs, granule->m_count1tableSelect, m_samples);
 
-	    std::cout << "part3: start=" << part3Start << ", end=" << part3End << ", calc_length=" << part3Length <<
-		std::endl;
+	    // Check the position in the bitstream as we may exceed the limit of the part2_3 area.
+	    unsigned position = bs.GetPosition();
+	    unsigned part2_3End = part2Start + granule->m_par2_3Length;
 
-//	    bs.GetData(part3Length);
+//	    std::cout << "position=" << position << ", end=" << part2_3End << std::endl;
+
+	    if (position > part2_3End)
+	    {
+		// Discard the last entry decoded from the count1 area
+		for (unsigned i = 0; i < 4; ++i)
+		    m_samples.pop_back();
+
+		// ... and rewind the bitstream to be at the end of the current granule
+		bs.Rewind(position - (part2Start + granule->m_par2_3Length));
+	    }
+	    else if (position < part2_3End)
+	    {
+		// Get the remaining empty bits from the huffman coded data
+		bs.GetData(part2_3End - position);
+	    }
+
+	    // Make sure we are at the end of the current granule now
+	    assert(bs.GetPosition() == part2_3End);
+
+//	    while (m_samples.size() < 576)
+//		m_samples.push_back(0);
+
+	    DumpSamples();
 	}
     }
 }
@@ -444,4 +463,15 @@ void Mp3Codec::DumpScaleFactors() const
 	    std::cout << std::endl;
 	}
     }
+}
+
+// =====================================================================================================================
+void Mp3Codec::DumpSamples() const
+{
+    std::cout << "Samples: (count=" << m_samples.size() << ")" << std::endl;
+
+    std::cout << " ";
+    for (std::vector<int>::const_iterator it = m_samples.begin(); it != m_samples.end(); ++it)
+	std::cout << " " << *it;
+    std::cout << std::endl;
 }

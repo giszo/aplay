@@ -63,6 +63,8 @@ class Mp3Codec : public AudioCodec
 	void DumpSideInformation() const;
 	/// Dumps the scale factors
 	void DumpScaleFactors() const;
+	/// Dumps the huffman decoded samples
+	void DumpSamples() const;
 
 	struct SideInformation
 	{
@@ -106,6 +108,9 @@ class Mp3Codec : public AudioCodec
 	// (first idx: granule, second idx: channel)
 	std::vector<unsigned> m_scaleFactors[2][2];
 
+	// samples decoded from the huffman data of the current granule
+	std::vector<int> m_samples;
+
 	// raw frame data
 	std::vector<unsigned char> m_frameData;
 
@@ -113,12 +118,6 @@ class Mp3Codec : public AudioCodec
 	static const unsigned s_bitrates_v1[3][16];
 	static const unsigned s_sampling_v1[4];
 	static const std::string s_channelModes[4];
-
-	struct HuffmanTable
-	{
-	};
-
-	static HuffmanTable s_huffmanTables[32];
 };
 
 #endif

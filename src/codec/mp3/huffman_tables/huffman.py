@@ -7,9 +7,8 @@ class HuffmanTreeNodeBase :
 	return 1
 
 class HuffmanTreeLeaf(HuffmanTreeNodeBase) :
-    def __init__(self, x, y) :
-	self.x = x
-	self.y = y
+    def __init__(self, data) :
+	self.data = data
 
 class HuffmanTreeNode(HuffmanTreeNodeBase) :
     def __init__(self) :
@@ -24,7 +23,7 @@ class HuffmanTreeNode(HuffmanTreeNodeBase) :
     def get_length(self) :
 	return 1 + self.left.get_length() + self.right.get_length()
 
-def load_huffman_table(tpath) :
+def load_huffman_table(tpath, count1) :
     f = open(tpath, "r")
     lines = f.readlines()
     f.close()
@@ -42,7 +41,7 @@ def load_huffman_table(tpath) :
 	    l = l.replace("  ", " ")
 
 	cols = l.split(" ")
-	data += [{"x" : int(cols[0]), "y" : int(cols[1]), "hcode" : cols[2]}]
+	data += [{"data" : cols[:-1], "hcode" : cols[-1]}]
 
     return data
 
@@ -63,7 +62,7 @@ def build_huffman_tree(data, root) :
 
 		if last :
 		    if cnode is not None : raise "shit happens"
-		    node.set_left(HuffmanTreeLeaf(d["x"], d["y"]))
+		    node.set_left(HuffmanTreeLeaf(d["data"]))
 		elif cnode :
 		    node = cnode
 		else :
@@ -73,7 +72,7 @@ def build_huffman_tree(data, root) :
 		cnode = node.get_right()
 		if last :
 		    if cnode is not None : raise "shit happens"
-		    node.set_right(HuffmanTreeLeaf(d["x"], d["y"]))
+		    node.set_right(HuffmanTreeLeaf(d["data"]))
 		elif cnode :
 		    node = cnode
 		else :
@@ -83,11 +82,11 @@ def build_huffman_tree(data, root) :
 def generate_huffman_tree_array(node) :
     if isinstance(node, HuffmanTreeLeaf) :
 	# for leaves the 'x' and 'y' member stores the real X and Y values
-	return [{"type" : "D", "x" : node.x, "y" : node.y}]
+	return [{"type" : "D", "data" : node.data}]
 
     # for nodes the 'x' stores the relative distance of the left subtree in the array while 'y' stores the same value
     # for the right subtree
-    result = [{"type" : "X", "x" : 1, "y" : 1 + node.get_left().get_length()}]
+    result = [{"type" : "X", "left" : 1, "right" : 1 + node.get_left().get_length()}]
 
     result += generate_huffman_tree_array(node.get_left())
     result += generate_huffman_tree_array(node.get_right())
@@ -106,7 +105,7 @@ def print_tree(level, node) :
 	print_tree(level + 1, node.get_left())
 	print_tree(level + 1, node.get_right())
     elif isinstance(node, HuffmanTreeLeaf) :
-	print "%s[%d,%d]" % (indent, node.x, node.y)
+	print "%s%s" % (indent, node.data)
     else :
 	print "%sNone" % indent
 
@@ -124,7 +123,7 @@ def test_huffman_tree_array(bta, bs) :
 
     return node
 
-def format_c_array(ht_array) :
+def format_c_array(ht_array, count1) :
     print "[%d][3] =" % len(ht_array)
     print "{"
     sys.stdout.write("   ")
@@ -133,21 +132,27 @@ def format_c_array(ht_array) :
 	last = i == len(ht_array) - 1
 	if i > 0 and i % 10 == 0 :
 	    sys.stdout.write("\n   ")
-	sys.stdout.write(" {%d, %d, %d}%s" % \
-	    (1 if ht_item["type"] == "D" else 0, ht_item["x"], ht_item["y"], "" if last else ","))
+
+	ending = "" if last else ","
+	if ht_item["type"] == "X" :
+	    sys.stdout.write(" {0, %s}%s" % (", ".join([str(ht_item["left"]), str(ht_item["right"])] + ["0" for i in range(2 if count1 else 0)]), ending))
+	else :
+	    sys.stdout.write(" {1, %s}%s" % (", ".join(ht_item["data"]), ending))
     print
     print "}"
 
 def usage() :
-    print "%s input_table" % sys.argv[0]
+    print "%s type input_table" % sys.argv[0]
+    print
+    print "Types: bigvalue count1"
     sys.exit(0)
 
 # check command line parameters
-if len(sys.argv) != 2 :
+if len(sys.argv) != 3 :
     usage()
 
 # load the huffman table definition from the input file
-huff_table = load_huffman_table(sys.argv[1])
+huff_table = load_huffman_table(sys.argv[2], sys.argv[1] == "count1")
 #print huff_table
 
 # build huffman tree from the loaded data
@@ -161,4 +166,4 @@ h_array = generate_huffman_tree_array(ht_root)
 #print h_array
 
 # format the array that it can be inserted directly into C/C++ source
-format_c_array(h_array)
+format_c_array(h_array, sys.argv[1] == "count1")
