@@ -2,6 +2,7 @@
  * Documents used to implement this MP3 decoder:
  *   - http://www.mp3-tech.org/programmer/docs/mp3_theory.pdf
  *   - http://www.mp3-tech.org/programmer/docs/iso11172-3.zip
+ *   - http://www.mp3-tech.org/programmer/docs/bitstream.zip
  */
 
 #include "huffman.h"
@@ -13,6 +14,7 @@
 #include <iomanip>
 #include <cstdio>
 #include <cassert>
+#include <cstdlib>
 
 const std::string Mp3Codec::s_layerNames[5] = {"", "I", "II", "III", "reserved"};
 
@@ -107,7 +109,6 @@ bool Mp3Codec::ReadFrameData()
     // main data
     std::vector<unsigned char> mainData(it, end);
     ParseMainData(mainData);
-    DumpScaleFactors();
 
     return true;
 }
@@ -151,6 +152,7 @@ void Mp3Codec::ParseSideInformation(const std::vector<unsigned char>& data)
 		// block type is not used, it's safe to use 0 as a default value
 		// (see Mp3 The Theory Behind - Page 16)
 		granule->m_blockType = 0;
+		granule->m_mixedBlockFlag = 0;
 		for (unsigned i = 0; i < 3; ++i)
 		    granule->m_tableSelect[i] = bs.GetData(5);
 		granule->m_region0Count = bs.GetData(4);
@@ -190,6 +192,16 @@ void Mp3Codec::ParseMainData(const std::vector<unsigned char>& data)
 {
     BitStream bs(data, data.size() * 8);
 
+    static const unsigned scaleFactorBandIndex[3][21] =
+    {
+	// 44100 Hz
+	{0, 4, 8, 12, 16, 20, 24, 30, 36, 44, 52, 62, 74, 90, 110, 134, 162, 196, 238, 288, 342},
+	// 48000 Hz
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // TODO
+	// 32000 Hz
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0} // TODO
+    };
+
     for (unsigned grIndex = 0; grIndex < 2; ++grIndex)
     {
 	for (unsigned channel = 0; channel < (IsMono() ? 1 : 2); ++channel)
@@ -199,10 +211,37 @@ void Mp3Codec::ParseMainData(const std::vector<unsigned char>& data)
 	    // Save the start position of part2 so we can calculate its length later on
 	    unsigned part2Start = bs.GetPosition();
 
+	    // Scale factor length table
+	    // (see Mp3 The Theory Behind - Page 15 - Table 5.11)
+	    static const unsigned scaleFactorLength[2][16] =
+	    {
+		{0, 0, 0, 0, 3, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4},
+		{0, 1, 2, 3, 0, 1, 2, 3, 1, 2, 3, 1, 2, 3, 2, 3}
+	    };
+
 	    // Parse the scale factors
 	    if (granule->m_blockType == SideInformation::THREE_SHORT_WINDOWS)
 	    {
-		// TODO
+		if (granule->m_mixedBlockFlag)
+		{
+		    std::cout << "mixed" << std::endl;
+		    // TODO
+		    abort();
+		}
+		else
+		{
+		    // Scale factors are divided into 2 groups (0-5, 6-11)
+		    static const unsigned scaleFactorCountPerGroup[2] = {6, 6};
+
+		    for (unsigned sfGrpIdx = 0; sfGrpIdx < 2; ++sfGrpIdx)
+		    {
+			unsigned sfBits = scaleFactorLength[sfGrpIdx][granule->m_scalefacCompress];
+
+			for (unsigned sfCnt = 0; sfCnt < scaleFactorCountPerGroup[sfGrpIdx]; ++sfCnt)
+			    for (unsigned cnt = 0; cnt < 3; ++cnt)
+				m_scaleFactors[grIndex][channel].push_back(bs.GetData(sfBits));
+		    }
+		}
 	    }
 	    else
 	    {
@@ -214,14 +253,6 @@ void Mp3Codec::ParseMainData(const std::vector<unsigned char>& data)
 		{
 		    if (IsScaleFactorGroupPresent(grIndex, m_sideInformation.m_scfsi[channel], sfGrpIdx))
 		    {
-			// Scale factor length table
-			// (see Mp3 The Theory Behind - Page 15 - Table 5.11)
-			static const unsigned scaleFactorLength[2][16] =
-			{
-			    {0, 0, 0, 0, 3, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4},
-			    {0, 1, 2, 3, 0, 1, 2, 3, 1, 2, 3, 1, 2, 3, 2, 3}
-			};
-
 			unsigned sfBits = scaleFactorLength[sfGrpIdx / 2][granule->m_scalefacCompress];
 
 			for (unsigned cnt = 0; cnt < scaleFactorCountPerGroup[sfGrpIdx]; ++cnt)
@@ -234,7 +265,8 @@ void Mp3Codec::ParseMainData(const std::vector<unsigned char>& data)
 	    unsigned part2Length = bs.GetPosition() - part2Start;
 	    // Make sure part2 is not bigger that was written in the side information for part2+3
 	    assert(granule->m_par2_3Length >= part2Length);
-//	    std::cout << "gr=" << grIndex << " ch=" << channel << " part2len=" << part2Length << " part3len=" << part3Length << std::endl;
+
+//	    std::cout << "part2: start=" << part2Start << " length=" << part2Length << std::endl;
 
 	    // Parse the main (huffman coded) data
 	    unsigned region1Start;
@@ -248,26 +280,12 @@ void Mp3Codec::ParseMainData(const std::vector<unsigned char>& data)
 	    }
 	    else
 	    {
-		static const unsigned scaleFactorBandIndex[3][21] =
-		{
-		    // 44100 Hz
-		    {0, 4, 8, 12, 16, 20, 24, 30, 36, 44, 52, 62, 74, 90, 110, 134, 162, 196, 238, 288, 342},
-		    // 48000 Hz
-		    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ,0, 0},
-		    // 32000 Hz
-		    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ,0, 0}
-		};
-
-//		std::cout << "reg0_cnt=" << granule->m_region0Count << ", reg1_cnt=" << granule->m_region1Count << std::endl;
 		assert(granule->m_region0Count + 1 < 21);
 		assert(granule->m_region0Count + 1 + granule->m_region1Count + 1 < 21);
 
 		region1Start = scaleFactorBandIndex[0 /* TODO: 44.1kHz for now */][granule->m_region0Count + 1];
 		region2Start = scaleFactorBandIndex[0 /* TODO: 44.1kHz for now */][granule->m_region0Count + 1 + granule->m_region1Count + 1];
 	    }
-
-//	    std::cout << "bigvalues*2=" << (granule->m_bigValues * 2) << std::endl;
-//	    std::cout << "reg1start=" << region1Start << ", reg2start=" << region2Start << std::endl;
 
 	    m_samples.clear();
 
@@ -285,8 +303,6 @@ void Mp3Codec::ParseMainData(const std::vector<unsigned char>& data)
 	    // Check the position in the bitstream as we may exceed the limit of the part2_3 area.
 	    unsigned position = bs.GetPosition();
 	    unsigned part2_3End = part2Start + granule->m_par2_3Length;
-
-//	    std::cout << "position=" << position << ", end=" << part2_3End << std::endl;
 
 	    if (position > part2_3End)
 	    {
