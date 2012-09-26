@@ -6,23 +6,30 @@
 class BitStream
 {
     public:
-	BitStream(const std::vector<unsigned char>& data, unsigned size);
+	typedef std::vector<unsigned char>::const_iterator StreamIterator;
 
+	BitStream(const StreamIterator& start, const StreamIterator& end);
+
+	/// returns the length of the bitstream
+	unsigned GetLength() const;
+	/// returns the current position in the bitstream
 	unsigned GetPosition() const;
 
 	unsigned GetData(unsigned bitLength);
 
+	void Skip(unsigned amount);
 	void Rewind(unsigned amount);
 
     private:
-	/// The actual data to read from
-	const std::vector<unsigned char>& m_data;
-	/// Number of available bits in the data
-	unsigned m_size;
+	/// start of the bitstream
+	StreamIterator m_start;
+	/// end of the bitstream
+	StreamIterator m_end;
 
-	/// Current byte position
-	unsigned m_bytePos;
-	/// Current bit position inside the byte
+	/// current position in the bitstream
+	StreamIterator m_pos;
+
+	/// bit position inside the current byte of the stream
 	unsigned m_bitPos;
 };
 

@@ -1,30 +1,42 @@
 #include <bitstream.h>
 
 #include <iostream>
-#include <stdlib.h>
+#include <cassert>
+#include <cstdlib>
 
-BitStream::BitStream(const std::vector<unsigned char>& data, unsigned size)
-    : m_data(data),
-      m_size(size),
-      m_bytePos(0),
+// =====================================================================================================================
+BitStream::BitStream(const StreamIterator& start, const StreamIterator& end)
+    : m_start(start),
+      m_end(end),
+      m_pos(start),
       m_bitPos(0)
 {
 }
 
-unsigned BitStream::GetPosition() const
+// =====================================================================================================================
+unsigned BitStream::GetLength() const
 {
-    return m_bytePos * 8 + m_bitPos;
+    return (m_end - m_start) * 8;
 }
 
+// =====================================================================================================================
+unsigned BitStream::GetPosition() const
+{
+    return (m_pos - m_start) * 8 + m_bitPos;
+}
+
+// =====================================================================================================================
 unsigned BitStream::GetData(unsigned bitLength)
 {
-    // check that we have enough data to serve the request
-    if (m_bytePos * 8 + m_bitPos + bitLength > m_size)
+    // make sure we can return the requested data in the 'unsigned' type
+    assert(bitLength <= 32);
+
+    if (GetPosition() + bitLength > GetLength())
     {
 	std::cerr << "Asked too much data from the bit stream!" << std::endl;
-	std::cout << "Total data: " << m_size << " bits" << std::endl;
-	std::cout << "Current position: " << (m_bytePos * 8 + m_bitPos) << std::endl;
-	std::cout << "Requested amount: " << bitLength << std::endl;
+	std::cerr << "Total length: " << GetLength() << std::endl;
+	std::cerr << "Current position: " << GetPosition() << std::endl;
+	std::cerr << "Number of requested bits: " << bitLength << std::endl;
 	abort();
     }
 
@@ -36,12 +48,15 @@ unsigned BitStream::GetData(unsigned bitLength)
 	unsigned amount = std::min(bitLength, 8 - m_bitPos);
 	unsigned remaining = 8 - (m_bitPos + amount);
 
+	register unsigned char streamData = *m_pos;
+
 	data <<= amount;
-	data |= (m_data[m_bytePos] >> remaining) & ((1 << amount) - 1);
+	data |= (streamData >> remaining) & ((1 << amount) - 1);
 
 	m_bitPos = (m_bitPos + amount) % 8;
+
 	if (m_bitPos == 0)
-	    m_bytePos++;
+	    ++m_pos;
 
 	bitLength -= amount;
     }
@@ -50,7 +65,7 @@ unsigned BitStream::GetData(unsigned bitLength)
     while (bitLength >= 8)
     {
 	data <<= 8;
-	data |= m_data[m_bytePos++];
+	data |= *m_pos++;
 	bitLength -= 8;
     }
 
@@ -59,8 +74,10 @@ unsigned BitStream::GetData(unsigned bitLength)
     {
 	unsigned remaining = 8 - bitLength;
 
+	register unsigned char streamData = *m_pos;
+
 	data <<= bitLength;
-	data |= (m_data[m_bytePos] >> remaining) & ((1 << bitLength) - 1);
+	data |= (streamData >> remaining) & ((1 << bitLength) - 1);
 
 	m_bitPos = bitLength;
     }
@@ -68,8 +85,31 @@ unsigned BitStream::GetData(unsigned bitLength)
     return data;
 }
 
+// =====================================================================================================================
+void BitStream::Skip(unsigned amount)
+{
+    if (GetPosition() + amount > GetLength())
+    {
+	abort();
+    }
+
+    unsigned bits = amount + m_bitPos;
+
+    m_pos += bits / 8;
+    m_bitPos = bits % 8;
+}
+
+// =====================================================================================================================
 void BitStream::Rewind(unsigned amount)
 {
+    if (amount > GetPosition())
+    {
+	std::cerr << "Tried to rewind bit stream with too big number of bits!" << std::endl;
+	std::cerr << "Current position: " << GetPosition() << std::endl;
+	std::cerr << "Number of bits to rewind: " << amount << std::endl;
+	abort();
+    }
+
     if (m_bitPos > 0)
     {
 	unsigned i = std::min(amount, m_bitPos);
@@ -80,10 +120,13 @@ void BitStream::Rewind(unsigned amount)
 
     while (amount >= 8)
     {
-	m_bytePos--;
+	--m_pos;
 	amount -= 8;
     }
 
     if (amount > 0)
+    {
+	--m_pos;
 	m_bitPos = 8 - amount;
+    }
 }

@@ -2,6 +2,7 @@
 #define MP3CODEC_H_INCLUDED
 
 #include "audiocodec.h"
+#include "../bitstream.h"
 
 #include <string>
 #include <vector>
@@ -13,7 +14,7 @@ class Mp3Codec : public AudioCodec
     public:
 	Mp3Codec(DataSource* source);
 
-	void ReadFrame();
+	bool ReadFrame();
 
     private:
 	/// Synchronized the input to the next frame and loads the frame header data
@@ -23,7 +24,7 @@ class Mp3Codec : public AudioCodec
 	bool ReadFrameData();
 
 	void ParseSideInformation(const std::vector<unsigned char>& data);
-	void ParseMainData(const std::vector<unsigned char>& data);
+	void ParseMainData(BitStream& bs);
 
 	/// Returns the layer number that the current frame is using
 	unsigned GetLayer() const;
@@ -110,6 +111,8 @@ class Mp3Codec : public AudioCodec
 
 	// samples decoded from the huffman data of the current granule
 	std::vector<int> m_samples;
+
+	std::vector<unsigned char> m_frameData;
 
 	static const std::string s_layerNames[5];
 	static const unsigned s_bitrates_v1[3][16];

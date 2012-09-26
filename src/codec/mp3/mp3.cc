@@ -41,16 +41,18 @@ Mp3Codec::Mp3Codec(DataSource* source)
 {}
 
 // =====================================================================================================================
-void Mp3Codec::ReadFrame()
+bool Mp3Codec::ReadFrame()
 {
     if (!SyncFrame())
     {
 	std::cerr << "mp3: frame synchronization failed" << std::endl;
-	return;
+	return false;
     }
 
     DumpHeader();
     ReadFrameData();
+
+    return true;
 }
 
 // =====================================================================================================================
@@ -106,22 +108,22 @@ bool Mp3Codec::ReadFrameData()
     ParseSideInformation(data);
 //    DumpSideInformation();
 
-    // read main data
-    if (m_sideInformation.m_mainDataBegin == 0)
-    {
-	data.resize(frameSize - (4 /* header size */ + sideInfoSize /* size of the side information */));
+    // calculate the size of the main data in the current frame
+    unsigned frameMainDataSize =
+	frameSize - (4 /* header size */ + (IsCrcProtected() ? 2 : 0) /* crc value */ + sideInfoSize /* side info size */);
 
-	if (m_source->Read(&data[0], data.size()) != static_cast<int>(data.size()))
-	    return false;
-    }
-    else
-    {
-	std::cout << "mainDataBegin=" << m_sideInformation.m_mainDataBegin << std::endl;
-	abort();
-    }
+    // load the data from the current frame
+    size_t oldDataSize = m_frameData.size();
+    m_frameData.resize(oldDataSize + frameMainDataSize);
+
+    if (m_source->Read(&m_frameData[oldDataSize], frameMainDataSize) != static_cast<int>(frameMainDataSize))
+	return false;
 
     // parse main data
-    ParseMainData(data);
+    BitStream mainDataStream(
+	m_frameData.begin() + oldDataSize - m_sideInformation.m_mainDataBegin,
+	m_frameData.end());
+    ParseMainData(mainDataStream);
 
     return true;
 }
@@ -129,7 +131,7 @@ bool Mp3Codec::ReadFrameData()
 // =====================================================================================================================
 void Mp3Codec::ParseSideInformation(const std::vector<unsigned char>& data)
 {
-    BitStream bs(data, data.size() * 8);
+    BitStream bs(data.begin(), data.end());
 
     // main data begin
     m_sideInformation.m_mainDataBegin = bs.GetData(9);
@@ -207,10 +209,8 @@ static inline unsigned GetBigValuesRegionIndex(unsigned position, unsigned regio
 }
 
 // =====================================================================================================================
-void Mp3Codec::ParseMainData(const std::vector<unsigned char>& data)
+void Mp3Codec::ParseMainData(BitStream& bs)
 {
-    BitStream bs(data, data.size() * 8);
-
     static const unsigned scaleFactorBandIndex[3][23] =
     {
 	// 44100 Hz
@@ -332,12 +332,12 @@ void Mp3Codec::ParseMainData(const std::vector<unsigned char>& data)
 		    m_samples.pop_back();
 
 		// ... and rewind the bitstream to be at the end of the current granule
-		bs.Rewind(position - (part2Start + granule->m_par2_3Length));
+		bs.Rewind(position - part2_3End);
 	    }
 	    else if (position < part2_3End)
 	    {
 		// Get the remaining empty bits from the huffman coded data
-		bs.GetData(part2_3End - position);
+		bs.Skip(part2_3End - position);
 	    }
 
 	    // Make sure we are at the end of the current granule now
