@@ -81,34 +81,47 @@ bool Mp3Codec::SyncFrame()
 // =====================================================================================================================
 bool Mp3Codec::ReadFrameData()
 {
+    std::vector<unsigned char> data;
+
     // calculate frame size
     unsigned frameSize = 144 * GetBitrate() * 1000 / GetSamplingRate() + (IsPadded() ? 1 : 0);
-    std::cout << "frameSize=" << frameSize << std::endl;
-    // skip the size of the header as it has been read already
-    frameSize -= 4;
-    m_frameData.resize(frameSize);
 
-    if (m_source->Read(&m_frameData[0], frameSize) != static_cast<int>(frameSize))
+    // CRC protection
+    if (IsCrcProtected())
+    {
+	uint16_t crc;
+	if (m_source->Read(&crc, 2) != 2)
+	    return false;
+
+	// TODO: implement CRC validation
+    }
+
+    // read side information
+    unsigned sideInfoSize = IsMono() ? 17 : 32;
+    data.resize(sideInfoSize);
+    if (m_source->Read(&data[0], sideInfoSize) != static_cast<int>(sideInfoSize))
 	return false;
 
-    // Parse the required parts of the frame data ...
-    std::vector<unsigned char>::const_iterator it = m_frameData.begin();
-    std::vector<unsigned char>::const_iterator end = m_frameData.end();
-
-    // Possible CRC protection
-    if (IsCrcProtected())
-	it += 2; // TODO: implement CRC validation
-
-    // side information
-    std::vector<unsigned char> sideInfo(it, it + (IsMono() ? 17 : 32));
-    it += sideInfo.size();
-
-    ParseSideInformation(sideInfo);
+    // parse side information
+    ParseSideInformation(data);
 //    DumpSideInformation();
 
-    // main data
-    std::vector<unsigned char> mainData(it, end);
-    ParseMainData(mainData);
+    // read main data
+    if (m_sideInformation.m_mainDataBegin == 0)
+    {
+	data.resize(frameSize - (4 /* header size */ + sideInfoSize /* size of the side information */));
+
+	if (m_source->Read(&data[0], data.size()) != static_cast<int>(data.size()))
+	    return false;
+    }
+    else
+    {
+	std::cout << "mainDataBegin=" << m_sideInformation.m_mainDataBegin << std::endl;
+	abort();
+    }
+
+    // parse main data
+    ParseMainData(data);
 
     return true;
 }
@@ -146,6 +159,12 @@ void Mp3Codec::ParseSideInformation(const std::vector<unsigned char>& data)
 		    granule->m_tableSelect[i] = bs.GetData(5);
 		granule->m_tableSelect[2] = 0; // not used here
 		granule->m_subBlockGain = bs.GetData(9);
+
+		if (granule->m_blockType == SideInformation::THREE_SHORT_WINDOWS)
+		    granule->m_region0Count = 8;
+		else
+		    granule->m_region0Count = 7;
+		granule->m_region1Count = 20 - granule->m_region0Count;
 	    }
 	    else
 	    {
@@ -192,14 +211,14 @@ void Mp3Codec::ParseMainData(const std::vector<unsigned char>& data)
 {
     BitStream bs(data, data.size() * 8);
 
-    static const unsigned scaleFactorBandIndex[3][21] =
+    static const unsigned scaleFactorBandIndex[3][23] =
     {
 	// 44100 Hz
-	{0, 4, 8, 12, 16, 20, 24, 30, 36, 44, 52, 62, 74, 90, 110, 134, 162, 196, 238, 288, 342},
+	{0, 4, 8, 12, 16, 20, 24, 30, 36, 44, 52, 62, 74, 90, 110, 134, 162, 196, 238, 288, 342, 418, 576},
 	// 48000 Hz
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // TODO
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // TODO
 	// 32000 Hz
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0} // TODO
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0} // TODO
     };
 
     for (unsigned grIndex = 0; grIndex < 2; ++grIndex)
@@ -220,6 +239,8 @@ void Mp3Codec::ParseMainData(const std::vector<unsigned char>& data)
 	    };
 
 	    // Parse the scale factors
+	    m_scaleFactors[grIndex][channel].clear();
+
 	    if (granule->m_blockType == SideInformation::THREE_SHORT_WINDOWS)
 	    {
 		if (granule->m_mixedBlockFlag)
@@ -280,8 +301,8 @@ void Mp3Codec::ParseMainData(const std::vector<unsigned char>& data)
 	    }
 	    else
 	    {
-		assert(granule->m_region0Count + 1 < 21);
-		assert(granule->m_region0Count + 1 + granule->m_region1Count + 1 < 21);
+		assert(granule->m_region0Count + 1 < 23);
+		assert(granule->m_region0Count + 1 + granule->m_region1Count + 1 < 23);
 
 		region1Start = scaleFactorBandIndex[0 /* TODO: 44.1kHz for now */][granule->m_region0Count + 1];
 		region2Start = scaleFactorBandIndex[0 /* TODO: 44.1kHz for now */][granule->m_region0Count + 1 + granule->m_region1Count + 1];
@@ -486,8 +507,11 @@ void Mp3Codec::DumpSamples() const
 {
     std::cout << "Samples: (count=" << m_samples.size() << ")" << std::endl;
 
-    std::cout << " ";
-    for (std::vector<int>::const_iterator it = m_samples.begin(); it != m_samples.end(); ++it)
-	std::cout << " " << *it;
-    std::cout << std::endl;
+    if (!m_samples.empty())
+    {
+	std::cout << " ";
+	for (std::vector<int>::const_iterator it = m_samples.begin(); it != m_samples.end(); ++it)
+	    std::cout << " " << *it;
+	std::cout << std::endl;
+    }
 }

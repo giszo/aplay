@@ -111,9 +111,6 @@ class Mp3Codec : public AudioCodec
 	// samples decoded from the huffman data of the current granule
 	std::vector<int> m_samples;
 
-	// raw frame data
-	std::vector<unsigned char> m_frameData;
-
 	static const std::string s_layerNames[5];
 	static const unsigned s_bitrates_v1[3][16];
 	static const unsigned s_sampling_v1[4];
