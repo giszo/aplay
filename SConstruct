@@ -11,7 +11,7 @@ env["OBJ_COMMON"] = []
 # objects associated to the different codecs
 env["CODECS"] = {}
 
-SConscript(dirs = ["src"], exports = ["env"])
+SConscript(dirs = ["src", "test"], exports = ["env"])
 
 aplay = env.Program(
     "aplay",

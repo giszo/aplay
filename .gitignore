@@ -2,4 +2,5 @@
 *.swp
 
 /aplay
+/test/test
 /.sconsign.dblite

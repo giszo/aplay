@@ -1,0 +1,10 @@
+Import("env")
+
+test = env.Program(
+    "test",
+    ["main.cc", "bitstream.cc"] + env["OBJ_COMMON"],
+    LIBS = ["boost_unit_test_framework"]
+)
+
+test_alias = env.Alias("test", [test], test[0].abspath)
+AlwaysBuild(test_alias)
