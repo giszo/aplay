@@ -1,0 +1,8 @@
+Import("env")
+
+sources = ["bitstream.cc", "filedatasource.cc"]
+
+env["OBJ_MAIN"] = env.Object("main.cc")
+env["OBJ_COMMON"] += [env.Object(src) for src in sources]
+
+SConscript(dirs = ["codec"], exports = ["env"])
