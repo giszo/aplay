@@ -1,5 +1,5 @@
 #include <filedatasource.h>
-#include <codec/mp3.h>
+#include <codec/mp3/mp3.h>
 #include <bitstream.h>
 
 #include <iostream>

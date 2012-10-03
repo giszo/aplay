@@ -1,8 +1,8 @@
 #ifndef MP3CODEC_H_INCLUDED
 #define MP3CODEC_H_INCLUDED
 
-#include "audiocodec.h"
-#include "../bitstream.h"
+#include "../audiocodec.h"
+#include "../../bitstream.h"
 
 #include <string>
 #include <vector>
