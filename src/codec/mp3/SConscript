@@ -1,5 +1,5 @@
 Import("env")
 
-sources = ["mp3.cc", "huffman.cc"]
+sources = ["mp3.cc", "huffman.cc", "framesync.cc", "frameheader.cc"]
 
 env["CODECS"]["mp3"] = {"objects" : [env.Object(s) for s in sources]}

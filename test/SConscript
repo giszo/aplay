@@ -1,8 +1,10 @@
 Import("env")
 
+sources = ["main.cc", "bitstream.cc", "mp3_frameheader.cc", "mp3_framesync.cc"]
+
 test = env.Program(
     "test",
-    ["main.cc", "bitstream.cc"] + env["OBJ_COMMON"],
+    sources + env["OBJ_COMMON"] + env["CODECS"]["mp3"]["objects"],
     LIBS = ["boost_unit_test_framework"]
 )
 

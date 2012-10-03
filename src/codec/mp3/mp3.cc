@@ -16,6 +16,8 @@
 #include <cassert>
 #include <cstdlib>
 
+using codec::mp3::FrameHeader;
+
 const std::string Mp3Codec::s_layerNames[5] = {"", "I", "II", "III", "reserved"};
 
 // Bitrate table for MPEG version 1 Layer III
@@ -37,59 +39,29 @@ const std::string Mp3Codec::s_channelModes[4] = {"Stereo", "Joint stereo", "Dual
 
 // =====================================================================================================================
 Mp3Codec::Mp3Codec(DataSource* source)
-    : AudioCodec(source)
+    : AudioCodec(source),
+      m_synchronizer(*source)
 {}
 
 // =====================================================================================================================
 bool Mp3Codec::ReadFrame()
 {
-    if (!SyncFrame())
-    {
-	std::cerr << "mp3: frame synchronization failed" << std::endl;
+    if (!m_synchronizer.Sync())
 	return false;
-    }
 
-    DumpHeader();
     ReadFrameData();
 
     return true;
 }
 
 // =====================================================================================================================
-bool Mp3Codec::SyncFrame()
-{
-    // Read the whole header
-    if (m_source->Read(m_header, 4) != 4)
-	return false;
-
-    while (1)
-    {
-	// Check if we have a valid frame header
-	if (IsHeaderValid())
-	{
-	    std::cout << "mp3: found frame at " << (m_source->GetPosition() - 4) << std::endl;
-	    return true;
-	}
-
-	// Frame header is invalid, so drop the first byte, shift the remaining left, read a new byte and try again ...
-	for (unsigned i = 0; i < 3; ++i)
-	    m_header[i] = m_header[i + 1];
-
-	if (m_source->Read(&m_header[3], 1) != 1)
-	    return false;
-    }
-}
-
-// =====================================================================================================================
 bool Mp3Codec::ReadFrameData()
 {
     std::vector<unsigned char> data;
-
-    // calculate frame size
-    unsigned frameSize = 144 * GetBitrate() * 1000 / GetSamplingRate() + (IsPadded() ? 1 : 0);
+    const FrameHeader& frameHeader = m_synchronizer.GetFrameHeader();
 
     // CRC protection
-    if (IsCrcProtected())
+    if (frameHeader.IsProtected())
     {
 	uint16_t crc;
 	if (m_source->Read(&crc, 2) != 2)
@@ -99,7 +71,7 @@ bool Mp3Codec::ReadFrameData()
     }
 
     // read side information
-    unsigned sideInfoSize = IsMono() ? 17 : 32;
+    unsigned sideInfoSize = frameHeader.IsMono() ? 17 : 32;
     data.resize(sideInfoSize);
     if (m_source->Read(&data[0], sideInfoSize) != static_cast<int>(sideInfoSize))
 	return false;
@@ -110,7 +82,7 @@ bool Mp3Codec::ReadFrameData()
 
     // calculate the size of the main data in the current frame
     unsigned frameMainDataSize =
-	frameSize - (4 /* header size */ + (IsCrcProtected() ? 2 : 0) /* crc value */ + sideInfoSize /* side info size */);
+	frameHeader.CalculateFrameSize() - (4 /* header size */ + (frameHeader.IsProtected() ? 2 : 0) /* crc value */ + sideInfoSize /* side info size */);
 
     // load the data from the current frame
     size_t oldDataSize = m_frameData.size();
@@ -132,18 +104,19 @@ bool Mp3Codec::ReadFrameData()
 void Mp3Codec::ParseSideInformation(const std::vector<unsigned char>& data)
 {
     BitStream bs(data.begin(), data.end());
+    const FrameHeader& frameHeader = m_synchronizer.GetFrameHeader();
 
     // main data begin
     m_sideInformation.m_mainDataBegin = bs.GetData(9);
     // private bits
-    bs.GetData(IsMono() ? 5 : 3);
+    bs.GetData(frameHeader.IsMono() ? 5 : 3);
     // scfsi
-    for (unsigned channel = 0; channel < (IsMono() ? 1 : 2); ++channel)
+    for (unsigned channel = 0; channel < (frameHeader.IsMono() ? 1 : 2); ++channel)
 	m_sideInformation.m_scfsi[channel] = bs.GetData(4);
     // granules
     for (unsigned grIndex = 0; grIndex < 2; ++grIndex)
     {
-	for (unsigned channel = 0; channel < (IsMono() ? 1 : 2); ++channel)
+	for (unsigned channel = 0; channel < (frameHeader.IsMono() ? 1 : 2); ++channel)
 	{
 	    SideInformation::Granule* granule = &m_sideInformation.m_granules[grIndex][channel];
 
@@ -211,6 +184,8 @@ static inline unsigned GetBigValuesRegionIndex(unsigned position, unsigned regio
 // =====================================================================================================================
 void Mp3Codec::ParseMainData(BitStream& bs)
 {
+    const FrameHeader& frameHeader = m_synchronizer.GetFrameHeader();
+
     static const unsigned scaleFactorBandIndex[3][23] =
     {
 	// 44100 Hz
@@ -223,7 +198,7 @@ void Mp3Codec::ParseMainData(BitStream& bs)
 
     for (unsigned grIndex = 0; grIndex < 2; ++grIndex)
     {
-	for (unsigned channel = 0; channel < (IsMono() ? 1 : 2); ++channel)
+	for (unsigned channel = 0; channel < (frameHeader.IsMono() ? 1 : 2); ++channel)
 	{
 	    SideInformation::Granule* granule = &m_sideInformation.m_granules[grIndex][channel];
 
@@ -352,108 +327,20 @@ void Mp3Codec::ParseMainData(BitStream& bs)
 }
 
 // =====================================================================================================================
-unsigned Mp3Codec::GetLayer() const
-{
-    return 4 - ((m_header[1] >> 1) & 0x3);
-}
-
-// =====================================================================================================================
-unsigned Mp3Codec::GetBitrate() const
-{
-    unsigned layer = GetLayer();
-
-    if (layer != 3)
-    {
-	std::cerr << "Error: layer " << s_layerNames[layer] << " is not supported!" << std::endl;
-	return 0;
-    }
-
-    unsigned bitrateIdx = (m_header[2] >> 4) & 15;
-    return s_bitrates_v1[layer - 1][bitrateIdx];
-}
-
-// =====================================================================================================================
-unsigned Mp3Codec::GetSamplingRate() const
-{
-    unsigned samplingIdx = (m_header[2] >> 2) & 3;
-    return s_sampling_v1[samplingIdx];
-}
-
-// =====================================================================================================================
-bool Mp3Codec::IsHeaderValid() const
-{
-    // first byte is full of 1s
-    if (m_header[0] != 0xff)
-	return false;
-
-    // only MPEG Version 1 is supported for now
-    if ((m_header[1] & 0xf8) != 0xf8)
-	return false;
-
-    // invalid layer description?
-    if (((m_header[1] >> 1) & 0x3) == 0)
-	return false;
-
-    // invalid bitrate index?
-    unsigned brIndex = (m_header[2] >> 4) & 15;
-    if (brIndex == 0 || brIndex == 15)
-	return false;
-
-    // invalid sampling frequency index?
-    if (((m_header[2] >> 2) & 3) == 3)
-	return false;
-
-    return true;
-}
-
-// =====================================================================================================================
-Mp3Codec::ChannelMode Mp3Codec::GetChannelMode() const
-{
-    return static_cast<ChannelMode>((m_header[3] >> 6) & 3);
-}
-
-// =====================================================================================================================
-bool Mp3Codec::IsCrcProtected() const
-{
-    return (m_header[1] & 1) == 0;
-}
-
-// =====================================================================================================================
-bool Mp3Codec::IsPadded() const
-{
-    return (m_header[2] & 1);
-}
-
-// =====================================================================================================================
-void Mp3Codec::DumpHeader() const
-{
-    std::cout << "MP3 header:" << std::endl;
-    printf("  Raw: %02x%02x%02x%02x\n", m_header[0], m_header[1], m_header[2], m_header[3]);
-//    std::cout << "  Raw: ";
-//    for (unsigned i = 0; i < 4; ++i)
-//	std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(m_header[i]);
-//    std::cout << std::endl;
-    std::cout << "  Layer " << s_layerNames[GetLayer()] << std::endl;
-    std::cout << "  CRC: " << (IsCrcProtected() ? "protected" : "not protected") << std::endl;
-    std::cout << "  Bitrate: " << GetBitrate() << "kbps" << std::endl;
-    std::cout << "  Sampling: " << GetSamplingRate() << "Hz" << std::endl;
-    std::cout << "  Padding: " << (IsPadded() ? "yes" : "no") << std::endl;
-    std::cout << "  Channel mode: " << s_channelModes[GetChannelMode()] << std::endl;
-}
-
-// =====================================================================================================================
 void Mp3Codec::DumpSideInformation() const
 {
+    const FrameHeader& frameHeader = m_synchronizer.GetFrameHeader();
+
     std::cout << "Side information:" << std::endl;
     std::cout << "  Main data begin: " << m_sideInformation.m_mainDataBegin << std::endl;
     std::cout << "  SCFSI: " << m_sideInformation.m_scfsi[0];
-    if (!IsMono()) std::cout << " " <<  m_sideInformation.m_scfsi[1];
+    if (!frameHeader.IsMono()) std::cout << " " <<  m_sideInformation.m_scfsi[1];
     std::cout << std::endl;
     for (unsigned grIndex = 0; grIndex < 2; ++grIndex)
     {
 	std::cout << "  Granule #" << grIndex << std::endl;
 
-	for (unsigned channel = 0; channel < (IsMono() ? 1 : 2); ++channel)
+	for (unsigned channel = 0; channel < (frameHeader.IsMono() ? 1 : 2); ++channel)
 	{
 	    const SideInformation::Granule* granule = &m_sideInformation.m_granules[grIndex][channel];
 
@@ -490,7 +377,7 @@ void Mp3Codec::DumpScaleFactors() const
 
     for (unsigned grIndex = 0; grIndex < 2; ++grIndex)
     {
-	for (unsigned channel = 0; channel < (IsMono() ? 1: 2); ++channel)
+	for (unsigned channel = 0; channel < (m_synchronizer.GetFrameHeader().IsMono() ? 1: 2); ++channel)
 	{
 	    const std::vector<unsigned>& sfs = m_scaleFactors[grIndex][channel];
 

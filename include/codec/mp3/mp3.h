@@ -1,6 +1,8 @@
 #ifndef MP3CODEC_H_INCLUDED
 #define MP3CODEC_H_INCLUDED
 
+#include "framesync.h"
+
 #include "../audiocodec.h"
 #include "../../bitstream.h"
 
@@ -17,49 +19,12 @@ class Mp3Codec : public AudioCodec
 	bool ReadFrame();
 
     private:
-	/// Synchronized the input to the next frame and loads the frame header data
-	bool SyncFrame();
-
 	/// Reads the data of the frame into the memory
 	bool ReadFrameData();
 
 	void ParseSideInformation(const std::vector<unsigned char>& data);
 	void ParseMainData(BitStream& bs);
 
-	/// Returns the layer number that the current frame is using
-	unsigned GetLayer() const;
-
-	/// Returns the bitrate of the current frame
-	unsigned GetBitrate() const;
-
-	/// Returns the sampling rate of the current frame
-	unsigned GetSamplingRate() const;
-
-	enum ChannelMode
-	{
-	    STEREO,
-	    JOINT_STEREO,
-	    DUAL_CHANNEL,
-	    SINGLE_CHANNEL
-	};
-
-	/// Returns channel mode of the current frame
-	ChannelMode GetChannelMode() const;
-
-	/// Returns true if the loaded header is valid
-	bool IsHeaderValid() const;
-
-	bool IsMono() const
-	{ return GetChannelMode() == SINGLE_CHANNEL; }
-
-	/// Returns whether the current frame is protected with CRC or not
-	bool IsCrcProtected() const;
-
-	/// Returns whether the frame has been padded
-	bool IsPadded() const;
-
-	/// Dumps the header of the current frame to the standard output
-	void DumpHeader() const;
 	/// Dumps the contents of the side information table to the standard output
 	void DumpSideInformation() const;
 	/// Dumps the scale factors
@@ -101,8 +66,7 @@ class Mp3Codec : public AudioCodec
 	    Granule m_granules[2 /* granule index */][2 /* channel index */];
 	};
 
-	uint8_t m_header[4];
-	uint16_t m_crcValue;
+	codec::mp3::FrameSynchronizer m_synchronizer;
 	SideInformation m_sideInformation;
 
 	// scale factors
