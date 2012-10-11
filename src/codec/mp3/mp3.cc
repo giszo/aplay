@@ -18,25 +18,6 @@
 
 using codec::mp3::FrameHeader;
 
-const std::string Mp3Codec::s_layerNames[5] = {"", "I", "II", "III", "reserved"};
-
-// Bitrate table for MPEG version 1 Layer III
-const unsigned Mp3Codec::s_bitrates_v1[3][16] =
-{
-    // Layer I
-    {0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0},
-    // Layer II
-    {0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 380, 0},
-    // Layer III
-    {0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0}
-};
-
-// Sampling rate for MPEG version 1
-const unsigned Mp3Codec::s_sampling_v1[4] = {44100, 48000, 32000, 0};
-
-// Channel mode descriptions
-const std::string Mp3Codec::s_channelModes[4] = {"Stereo", "Joint stereo", "Dual channel", "Single channel"};
-
 // =====================================================================================================================
 Mp3Codec::Mp3Codec(DataSource* source)
     : AudioCodec(source),

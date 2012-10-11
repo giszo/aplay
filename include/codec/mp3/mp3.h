@@ -77,11 +77,6 @@ class Mp3Codec : public AudioCodec
 	std::vector<int> m_samples;
 
 	std::vector<unsigned char> m_frameData;
-
-	static const std::string s_layerNames[5];
-	static const unsigned s_bitrates_v1[3][16];
-	static const unsigned s_sampling_v1[4];
-	static const std::string s_channelModes[4];
 };
 
 #endif
