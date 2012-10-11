@@ -2,7 +2,6 @@
 
 #include <iostream>
 #include <cassert>
-#include <cstdlib>
 
 // =====================================================================================================================
 BitStream::BitStream(const StreamIterator& start, const StreamIterator& end)
@@ -32,13 +31,7 @@ unsigned BitStream::GetData(unsigned bitLength)
     assert(bitLength <= 32);
 
     if (GetPosition() + bitLength > GetLength())
-    {
-	std::cerr << "Asked too much data from the bit stream!" << std::endl;
-	std::cerr << "Total length: " << GetLength() << std::endl;
-	std::cerr << "Current position: " << GetPosition() << std::endl;
-	std::cerr << "Number of requested bits: " << bitLength << std::endl;
-	abort();
-    }
+	throw BitStreamException("asked too much data from the stream");
 
     unsigned data = 0;
 
@@ -89,9 +82,7 @@ unsigned BitStream::GetData(unsigned bitLength)
 void BitStream::Skip(unsigned amount)
 {
     if (GetPosition() + amount > GetLength())
-    {
-	abort();
-    }
+	throw BitStreamException("tried to skip too much");
 
     unsigned bits = amount + m_bitPos;
 
@@ -103,12 +94,7 @@ void BitStream::Skip(unsigned amount)
 void BitStream::Rewind(unsigned amount)
 {
     if (amount > GetPosition())
-    {
-	std::cerr << "Tried to rewind bit stream with too big number of bits!" << std::endl;
-	std::cerr << "Current position: " << GetPosition() << std::endl;
-	std::cerr << "Number of bits to rewind: " << amount << std::endl;
-	abort();
-    }
+	throw BitStreamException("tried to rewind too much");
 
     if (m_bitPos > 0)
     {

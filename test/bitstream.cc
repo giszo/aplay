@@ -96,3 +96,21 @@ BOOST_AUTO_TEST_CASE(TestSkipAndRewind)
     BOOST_CHECK_EQUAL(bs.GetData(3), 0x2 /* 010 */);
     BOOST_CHECK_EQUAL(bs.GetPosition(), 24);
 }
+
+BOOST_AUTO_TEST_CASE(TestBitStreamErrors)
+{
+    std::vector<unsigned char> data;
+    data.push_back(0x00);
+
+    BitStream bs(data.begin(), data.end());
+
+    // get 3 bits
+    bs.GetData(3);
+
+    // try to ask too much data
+    BOOST_CHECK_THROW(bs.GetData(12), BitStreamException);
+    // try skip error
+    BOOST_CHECK_THROW(bs.Skip(42), BitStreamException);
+    // try rewind error
+    BOOST_CHECK_THROW(bs.Rewind(42), BitStreamException);
+}

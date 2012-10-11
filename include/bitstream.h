@@ -1,7 +1,19 @@
 #ifndef BITSTREAM_H_INCLUDED
 #define BITSTREAM_H_INCLUDED
 
+#include <stdexcept>
 #include <vector>
+
+/**
+ * Thrown when an error happens during bitstream operations (eg. asked too much data)
+ */
+class BitStreamException : public std::runtime_error
+{
+    public:
+	BitStreamException(const std::string& error)
+	    : std::runtime_error(error)
+	{}
+};
 
 class BitStream
 {
