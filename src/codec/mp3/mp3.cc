@@ -379,11 +379,9 @@ void Mp3Codec::DumpScaleFactors() const
     {
 	for (unsigned channel = 0; channel < (m_synchronizer.GetFrameHeader().IsMono() ? 1: 2); ++channel)
 	{
-	    const std::vector<unsigned>& sfs = m_scaleFactors[grIndex][channel];
-
 	    std::cout << " ";
-	    for (std::vector<unsigned>::const_iterator it = sfs.begin(); it != sfs.end(); ++it)
-		std::cout << " " << *it;
+	    for (const auto& scaleFactor : m_scaleFactors[grIndex][channel])
+		std::cout << " " << scaleFactor;
 	    std::cout << std::endl;
 	}
     }
@@ -397,8 +395,8 @@ void Mp3Codec::DumpSamples() const
     if (!m_samples.empty())
     {
 	std::cout << " ";
-	for (std::vector<int>::const_iterator it = m_samples.begin(); it != m_samples.end(); ++it)
-	    std::cout << " " << *it;
+	for (const auto& sample : m_samples)
+	    std::cout << " " << sample;
 	std::cout << std::endl;
     }
 }

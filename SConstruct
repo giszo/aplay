@@ -1,7 +1,10 @@
-env = Environment()
+import os
+
+# use PATH defined in the environment where SCons was started
+env = Environment(ENV = {"PATH" : os.environ["PATH"]})
 
 # common compiler flags and include directories
-env["CPPFLAGS"] = ["-O2", "-Wall"]
+env["CPPFLAGS"] = ["-O2", "-Wall", "-std=c++11"]
 env["CPPPATH"] = ["#include"]
 
 # the main object containing the entry point of the application
